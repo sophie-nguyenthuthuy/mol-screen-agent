@@ -44,7 +44,11 @@ class RDKitNotAvailable(RuntimeError):
     pass
 
 
+_LOGGING_SILENCED = False
+
+
 def _require_rdkit():
+    global _LOGGING_SILENCED
     try:
         from rdkit import Chem  # noqa: F401
         from rdkit.Chem import (  # noqa: F401
@@ -59,6 +63,14 @@ def _require_rdkit():
             "RDKit is not installed. Install it with `pip install rdkit` "
             "(or `conda install -c conda-forge rdkit`)."
         ) from e
+    if not _LOGGING_SILENCED:
+        # Invalid SMILES are expected input we report cleanly as ``valid: False``;
+        # silence RDKit's C++ parse-error spew to stderr so it doesn't look like
+        # an unhandled crash.
+        from rdkit import RDLogger
+
+        RDLogger.DisableLog("rdApp.error")
+        _LOGGING_SILENCED = True
 
 
 def parse_smiles(smiles: str):
