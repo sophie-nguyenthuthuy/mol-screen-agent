@@ -74,9 +74,11 @@ makes the screening verdict reproducible.
 
 ## Built-in rule sets
 
-`lipinski_ro5`, `veber`, `ghose`, `lead_like`, `rule_of_three` (fragments),
-`cns_mpo` (BBB heuristics), and `pains` (structural-alert filter). List them
-with thresholds:
+Drug-likeness / absorption: `lipinski_ro5`, `veber`, `ghose`, `egan`, `muegge`,
+`gsk_4_400`. Stage-specific: `lead_like`, `rule_of_three` (fragments), `cns_mpo`
+(BBB heuristics). Structural-alert filters: `pains` (assay interference) and
+`brenk` (reactive / toxicophore fragments) — each backed by its own RDKit
+FilterCatalog. List them all with thresholds:
 
 ```bash
 mol-screen rules
@@ -138,5 +140,16 @@ pytest                 # core evaluator + offline intake, no RDKit/AWS needed
 ```
 
 The test suite covers the deterministic contract (thresholds, violation
-allowances, PAINS alerts, overrides, fail-safe on missing properties) and the
-offline planning fallback — all without external dependencies.
+allowances, PAINS/Brenk alerts, overrides, fail-safe on missing properties) and
+the offline planning fallback — all without external dependencies.
+
+A separate opt-in suite exercises the real Bedrock path and is skipped by
+default:
+
+```bash
+MOL_SCREEN_LIVE_BEDROCK=1 AWS_REGION=us-east-1 \
+    BEDROCK_MODEL_ID=us.anthropic.claude-3-5-sonnet-20241022-v2:0 \
+    pytest tests/test_bedrock_live.py -v
+```
+
+It downgrades to a skip (never a failure) if no Bedrock client is configured.

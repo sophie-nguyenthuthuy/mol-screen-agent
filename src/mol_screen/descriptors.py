@@ -81,26 +81,34 @@ def parse_smiles(smiles: str):
     return Chem.MolFromSmiles(smiles)
 
 
-_PAINS_CATALOG = None
+_CATALOGS: dict[str, object] = {}
 
 
-def _pains_catalog():
-    global _PAINS_CATALOG
-    if _PAINS_CATALOG is None:
+def _catalog(kind: str):
+    """Lazily build and cache a FilterCatalog for ``kind`` ("PAINS" or "BRENK")."""
+    if kind not in _CATALOGS:
         from rdkit.Chem import FilterCatalog
         from rdkit.Chem.FilterCatalog import FilterCatalogParams
 
         params = FilterCatalogParams()
-        params.AddCatalog(FilterCatalogParams.FilterCatalogs.PAINS)
-        _PAINS_CATALOG = FilterCatalog.FilterCatalog(params)
-    return _PAINS_CATALOG
+        params.AddCatalog(getattr(FilterCatalogParams.FilterCatalogs, kind))
+        _CATALOGS[kind] = FilterCatalog.FilterCatalog(params)
+    return _CATALOGS[kind]
+
+
+def _alerts(mol, kind: str) -> list[str]:
+    matches = _catalog(kind).GetMatches(mol)
+    return [m.GetDescription() for m in matches]
 
 
 def structural_alerts(mol) -> list[str]:
     """Return the names of any PAINS substructure alerts matched by ``mol``."""
-    catalog = _pains_catalog()
-    matches = catalog.GetMatches(mol)
-    return [m.GetDescription() for m in matches]
+    return _alerts(mol, "PAINS")
+
+
+def brenk_alerts(mol) -> list[str]:
+    """Return the names of any Brenk (reactive/toxicophore) alerts matched by ``mol``."""
+    return _alerts(mol, "BRENK")
 
 
 def compute_properties(smiles: str) -> dict:
@@ -136,6 +144,7 @@ def compute_properties(smiles: str) -> dict:
         "qed": round(QED.qed(mol), 3),
     }
     props["structural_alerts"] = structural_alerts(mol)
+    props["brenk_alerts"] = brenk_alerts(mol)
     return props
 
 

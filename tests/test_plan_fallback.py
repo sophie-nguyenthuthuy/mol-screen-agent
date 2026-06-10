@@ -40,3 +40,18 @@ def test_only_known_rule_sets_returned():
 def test_no_duplicate_rule_sets():
     plan = _fallback_plan("oral drug-like lipinski ro5", CAT)
     assert len(plan.rule_sets) == len(set(plan.rule_sets))
+
+
+def test_brenk_brief_selects_brenk():
+    plan = _fallback_plan("remove reactive and toxicophore fragments", CAT)
+    assert "brenk" in plan.rule_sets
+
+
+def test_egan_and_muegge_briefs():
+    assert "egan" in _fallback_plan("apply the egan egg", CAT).rule_sets
+    assert "muegge" in _fallback_plan("muegge drug-likeness", CAT).rule_sets
+
+
+def test_gsk_brief_selects_gsk_4_400():
+    plan = _fallback_plan("favor developability, gsk 4/400", CAT)
+    assert "gsk_4_400" in plan.rule_sets

@@ -76,10 +76,12 @@ class RuleSet:
     description: str
     thresholds: list[Threshold]
     max_violations: int = 0
-    # When True, the presence of any structural alert (e.g. PAINS) fails the
-    # set regardless of numeric thresholds. Handled by the evaluator using the
-    # ``structural_alerts`` property.
+    # When True, the presence of any structural alert fails the set regardless
+    # of numeric thresholds. ``alert_property`` names which alert list in the
+    # property dict to inspect (e.g. "structural_alerts" for PAINS,
+    # "brenk_alerts" for Brenk), so different catalogs can back different sets.
     forbid_structural_alerts: bool = False
+    alert_property: str = "structural_alerts"
 
 
 @dataclass
@@ -124,7 +126,7 @@ def evaluate_rule_set(properties: dict, rule_set: RuleSet) -> RuleSetResult:
     alert_failure = None
     passed = violations <= rule_set.max_violations
     if rule_set.forbid_structural_alerts:
-        alerts = properties.get("structural_alerts") or []
+        alerts = properties.get(rule_set.alert_property) or []
         if alerts:
             passed = False
             alert_failure = ", ".join(str(a) for a in alerts)
@@ -214,11 +216,51 @@ BUILTIN_RULE_SETS: dict[str, RuleSet] = {
         ],
         max_violations=1,
     ),
+    "egan": RuleSet(
+        name="egan",
+        description="Egan egg — oral absorption from polar surface area and lipophilicity.",
+        thresholds=[
+            Threshold("tpsa", max=131.6, unit="Å²"),
+            Threshold("logp", max=5.88),
+        ],
+        max_violations=0,
+    ),
+    "muegge": RuleSet(
+        name="muegge",
+        description="Muegge (Bayer) drug-likeness — a broad pharmacophore-aware filter.",
+        thresholds=[
+            Threshold("mol_weight", min=200, max=600, unit="g/mol"),
+            Threshold("logp", min=-2, max=5),
+            Threshold("tpsa", max=150, unit="Å²"),
+            Threshold("rings", max=7),
+            Threshold("rotatable_bonds", max=15),
+            Threshold("h_acceptors", max=10),
+            Threshold("h_donors", max=5),
+        ],
+        max_violations=0,
+    ),
+    "gsk_4_400": RuleSet(
+        name="gsk_4_400",
+        description="GSK 4/400 — a developability rule of thumb favoring smaller, less lipophilic compounds.",
+        thresholds=[
+            Threshold("mol_weight", max=400, unit="g/mol"),
+            Threshold("logp", max=4),
+        ],
+        max_violations=0,
+    ),
     "pains": RuleSet(
         name="pains",
         description="Pan-Assay Interference compounds — flags promiscuous false-positive scaffolds.",
         thresholds=[],
         forbid_structural_alerts=True,
+        alert_property="structural_alerts",
+    ),
+    "brenk": RuleSet(
+        name="brenk",
+        description="Brenk filter — removes reactive, unstable, or toxicophore-bearing fragments.",
+        thresholds=[],
+        forbid_structural_alerts=True,
+        alert_property="brenk_alerts",
     ),
 }
 
@@ -262,4 +304,5 @@ def apply_overrides(rule_set: RuleSet, overrides: dict[str, dict]) -> RuleSet:
         thresholds=new_thresholds,
         max_violations=rule_set.max_violations,
         forbid_structural_alerts=rule_set.forbid_structural_alerts,
+        alert_property=rule_set.alert_property,
     )

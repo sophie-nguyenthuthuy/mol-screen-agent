@@ -165,10 +165,18 @@ def _fallback_plan(brief: str, rule_set_catalog: dict) -> ScreeningPlan:
         selected.append("lead_like")
     if "ghose" in b:
         selected.append("ghose")
+    if "egan" in b:
+        selected.append("egan")
+    if "muegge" in b:
+        selected.append("muegge")
+    if any(k in b for k in ("gsk", "4/400", "developab")):
+        selected.append("gsk_4_400")
     if any(k in b for k in ("oral", "drug-like", "druglike", "lipinski", "ro5")):
         selected.extend(["lipinski_ro5", "veber"])
     if any(k in b for k in ("pains", "interfere", "promiscu", "false positive")):
         selected.append("pains")
+    if any(k in b for k in ("brenk", "reactive", "toxicophore", "unstable")):
+        selected.append("brenk")
     if not selected:
         selected = ["lipinski_ro5", "veber"]
     # De-duplicate, preserve order, keep only known sets.
@@ -220,7 +228,9 @@ def _verdict_to_prompt(verdict) -> str:
         if key in p:
             lines.append(f"  - {label}: {p[key]}")
     if p.get("structural_alerts"):
-        lines.append(f"  - Structural alerts: {', '.join(p['structural_alerts'])}")
+        lines.append(f"  - PAINS alerts: {', '.join(p['structural_alerts'])}")
+    if p.get("brenk_alerts"):
+        lines.append(f"  - Brenk alerts: {', '.join(p['brenk_alerts'])}")
     lines.append("Rule results:")
     for r in verdict.rule_set_results:
         status = "PASS" if r.passed else "FAIL"

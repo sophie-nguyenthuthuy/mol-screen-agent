@@ -126,3 +126,41 @@ def test_apply_overrides_ignores_unknown_property():
     rs = BUILTIN_RULE_SETS["veber"]
     same = apply_overrides(rs, {"qed": {"min": 0.5}})
     assert len(same.thresholds) == len(rs.thresholds)
+
+
+def test_apply_overrides_preserves_alert_property():
+    # The Brenk set carries a non-default alert_property; overrides must keep it.
+    rs = BUILTIN_RULE_SETS["brenk"]
+    copy = apply_overrides(rs, {"mol_weight": {"max": 300}})  # no-op, brenk has no thresholds
+    assert copy.alert_property == "brenk_alerts"
+    assert copy.forbid_structural_alerts
+
+
+def test_brenk_alert_uses_its_own_property():
+    # A Brenk alert fails the brenk set; a PAINS-only hit does not.
+    props = dict(ASPIRIN, brenk_alerts=["aldehyde"], structural_alerts=[])
+    res = evaluate_rule_set(props, BUILTIN_RULE_SETS["brenk"])
+    assert not res.passed
+    assert res.alert_failure == "aldehyde"
+
+    props_pains_only = dict(ASPIRIN, brenk_alerts=[], structural_alerts=["catechol_A(92)"])
+    assert evaluate_rule_set(props_pains_only, BUILTIN_RULE_SETS["brenk"]).passed
+
+
+def test_egan_passes_aspirin_fails_greasy():
+    assert evaluate_rule_set(ASPIRIN, BUILTIN_RULE_SETS["egan"]).passed
+    assert not evaluate_rule_set(BIG_GREASY, BUILTIN_RULE_SETS["egan"]).passed
+
+
+def test_muegge_rejects_too_small_molecule():
+    # Muegge requires MW >= 200; aspirin (180) is just under the floor.
+    res = evaluate_rule_set(ASPIRIN, BUILTIN_RULE_SETS["muegge"])
+    assert not res.passed
+    mw = next(t for t in res.threshold_results if t.threshold.prop == "mol_weight")
+    assert not mw.passed and "below minimum" in mw.reason
+
+
+def test_gsk_4_400_caps_weight_and_logp():
+    res = evaluate_rule_set(ASPIRIN, BUILTIN_RULE_SETS["gsk_4_400"])
+    assert res.passed
+    assert not evaluate_rule_set(BIG_GREASY, BUILTIN_RULE_SETS["gsk_4_400"]).passed
