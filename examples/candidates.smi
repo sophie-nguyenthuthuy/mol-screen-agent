@@ -1,0 +1,11 @@
+# SMILES  name   (one per line; text after the SMILES is an optional label)
+CC(=O)Oc1ccccc1C(=O)O	aspirin
+CN1C=NC2=C1C(=O)N(C(=O)N2C)C	caffeine
+CC(C)Cc1ccc(cc1)C(C)C(=O)O	ibuprofen
+CN1CCC[C@H]1c1cccnc1	nicotine
+OC[C@@H](O)[C@@H](O)[C@H](O)[C@H](O)CO	sorbitol
+CCN(CC)CCNC(=O)c1cc(Cl)c(N)cc1OC	metoclopramide
+C1=CC=C2C(=C1)C=CC3=CC=CC=C32	anthracene
+CCCCCCCCCCCCCCCCCC(=O)O	stearic_acid
+C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O	dihydrotestosterone
+not_a_real_smiles_xyz	invalid_example
