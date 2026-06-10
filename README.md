@@ -2,11 +2,12 @@
 
 An agentic molecule-screening pipeline that filters candidate molecules against
 medicinal-chemistry property thresholds and **explains its reasoning** — built
-on RDKit for the chemistry, LangGraph for the orchestration, and Bedrock-hosted
-Claude for intent parsing and per-molecule narration.
+on RDKit for the chemistry, LangGraph for the orchestration, and a **self-hosted
+open-source LLM** (via any OpenAI-compatible endpoint — Ollama, vLLM, llama.cpp,
+TGI) for intent parsing and per-molecule narration. No cloud LLM, no vendor lock-in.
 
 The design principle: **the LLM never decides pass/fail.** RDKit computes the
-properties, deterministic rule sets decide the verdict, and Claude is used only
+properties, deterministic rule sets decide the verdict, and the LLM is used only
 for the two things language models are actually good at here — turning a fuzzy
 brief into a concrete screening plan, and explaining a verdict to a chemist.
 
@@ -21,13 +22,13 @@ mol-screen smiles "CC(=O)Oc1ccccc1C(=O)O" "CCCCCCCCCCCCCCCCCC(=O)O" \
 
 and it will:
 
-1. **Plan** — Claude reads the brief and emits a structured plan: which rule
+1. **Plan** — the LLM reads the brief and emits a structured plan: which rule
    sets to apply (`lipinski_ro5`, `veber`, `cns_mpo`, …) and any threshold
    overrides the brief implies.
 2. **Screen** — RDKit computes ~11 descriptors per molecule (MW, cLogP, HBD/HBA,
    TPSA, rotatable bonds, QED, PAINS alerts, …); the deterministic evaluator
    checks them against the planned thresholds.
-3. **Explain** — Claude narrates each verdict, citing the specific properties
+3. **Explain** — the LLM narrates each verdict, citing the specific properties
    and thresholds that drove it.
 4. **Summarize** — pass / fail / invalid counts.
 
@@ -38,7 +39,7 @@ and it will:
                        │                                  │
                        ▼                                  │
    ┌───────────────────────────────────────┐             │
-   │ plan   (Bedrock Claude, structured)    │             │
+   │ plan   (open-source LLM, structured)   │             │
    │   brief ─▶ ScreeningPlan               │             │
    │   {rule_sets, threshold overrides}     │             │
    └───────────────────┬───────────────────┘             │
@@ -49,7 +50,7 @@ and it will:
    └───────────────────┬─────────────────────────────────────────┘
                        ▼
    ┌───────────────────────────────────────┐
-   │ explain  (Bedrock Claude)              │
+   │ explain  (open-source LLM)             │
    │   Verdict ─▶ 2-3 sentence rationale    │
    └───────────────────┬───────────────────┘
                        ▼
@@ -64,7 +65,7 @@ step when no molecule parsed.
 | --- | --- | --- |
 | `rules.py` | Rule sets + deterministic evaluator | none (pure stdlib) |
 | `descriptors.py` | RDKit property computation + PAINS | RDKit |
-| `llm.py` | Bedrock intake + explanation (+ offline fallbacks) | langchain-aws |
+| `llm.py` | OpenAI-compatible intake + explanation (+ offline fallbacks) | langchain-openai |
 | `graph.py` | LangGraph state machine | langgraph |
 | `agent.py` / `cli.py` | Public API and CLI | — |
 
@@ -97,26 +98,34 @@ pip install -r requirements.txt        # or: pip install -e .
 RDKit is required for the chemistry. If you hit wheel issues on pip, use
 conda-forge: `conda install -c conda-forge rdkit`.
 
-## Bedrock setup
+## LLM setup (self-hosted, open source)
 
-Uses the standard AWS credential chain (env vars, `~/.aws` profile, SSO, or an
-instance role). Copy `.env.example` and set your region + a Claude model id you
-have enabled in Bedrock:
+The agent talks to any OpenAI-compatible server hosting an open-weights model.
+The simplest local option is [Ollama](https://ollama.com):
 
 ```bash
-export AWS_REGION=us-east-1
-export BEDROCK_MODEL_ID=us.anthropic.claude-3-5-sonnet-20241022-v2:0
+ollama serve
+ollama pull qwen2.5:7b-instruct
 ```
 
-Point `BEDROCK_MODEL_ID` at a newer Claude (e.g. a Sonnet 4.6 / Opus 4.8
-inference profile) once you've enabled access in your account.
+That's it — the defaults already point at Ollama. To use a different server or
+model, copy `.env.example` and set:
 
-### Runs without Bedrock, too
+```bash
+export MOL_SCREEN_LLM_BASE_URL=http://localhost:11434/v1   # or your vLLM/TGI endpoint
+export MOL_SCREEN_LLM_MODEL=qwen2.5:7b-instruct            # any open-weights instruct model
+```
 
-If credentials or `langchain-aws` are unavailable, the agent degrades
-gracefully: intake falls back to keyword matching, and explanations fall back to
-templated summaries. The RDKit screening — the part that matters — is unchanged.
-This makes local development and CI possible without AWS.
+For production, point `MOL_SCREEN_LLM_BASE_URL` at a [vLLM](https://github.com/vllm-project/vllm)
+or TGI server (e.g. `http://host:8000/v1`) serving Qwen2.5 / Llama 3.1 / Mistral /
+DeepSeek. Tool-calling support in the model improves the structured intake step.
+
+### Runs without any LLM, too
+
+If no endpoint is reachable (or `langchain-openai` isn't installed), the agent
+degrades gracefully: intake falls back to keyword matching, and explanations
+fall back to templated summaries. The RDKit screening — the part that matters —
+is unchanged. This makes local development and CI possible with no model server.
 
 ## Usage
 
@@ -136,20 +145,21 @@ for v in r.verdicts:
 ## Tests
 
 ```bash
-pytest                 # core evaluator + offline intake, no RDKit/AWS needed
+pytest                 # core evaluator + offline intake, no RDKit/LLM needed
 ```
 
 The test suite covers the deterministic contract (thresholds, violation
 allowances, PAINS/Brenk alerts, overrides, fail-safe on missing properties) and
 the offline planning fallback — all without external dependencies.
 
-A separate opt-in suite exercises the real Bedrock path and is skipped by
-default:
+A separate opt-in suite exercises the real LLM path and is skipped by default:
 
 ```bash
-MOL_SCREEN_LIVE_BEDROCK=1 AWS_REGION=us-east-1 \
-    BEDROCK_MODEL_ID=us.anthropic.claude-3-5-sonnet-20241022-v2:0 \
-    pytest tests/test_bedrock_live.py -v
+# with a server up, e.g. `ollama serve`
+MOL_SCREEN_LIVE_LLM=1 \
+    MOL_SCREEN_LLM_BASE_URL=http://localhost:11434/v1 \
+    MOL_SCREEN_LLM_MODEL=qwen2.5:7b-instruct \
+    pytest tests/test_llm_live.py -v
 ```
 
-It downgrades to a skip (never a failure) if no Bedrock client is configured.
+It downgrades to a skip (never a failure) if no LLM client is configured.

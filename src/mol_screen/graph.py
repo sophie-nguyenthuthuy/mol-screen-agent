@@ -29,8 +29,8 @@ from .descriptors import compute_properties
 class ScreenState(TypedDict, total=False):
     brief: str
     smiles_list: list[str]
-    model_id: Optional[str]
-    region: Optional[str]
+    model: Optional[str]
+    base_url: Optional[str]
     plan: Any  # ScreeningPlan
     resolved_rule_sets: list[Any]  # list[RuleSet] after override application
     verdicts: list[Any]  # list[Verdict]
@@ -46,8 +46,8 @@ def plan_node(state: ScreenState) -> ScreenState:
     plan = llm_mod.plan_from_brief(
         state.get("brief", ""),
         rules_mod.BUILTIN_RULE_SETS,
-        model_id=state.get("model_id"),
-        region=state.get("region"),
+        model=state.get("model"),
+        base_url=state.get("base_url"),
     )
     resolved = [
         rules_mod.apply_overrides(rs, plan.overrides)
@@ -85,7 +85,7 @@ def explain_node(state: ScreenState) -> ScreenState:
     explanations = {}
     for v in state.get("verdicts", []):
         explanations[v.smiles] = llm_mod.explain_verdict(
-            v, model_id=state.get("model_id"), region=state.get("region")
+            v, model=state.get("model"), base_url=state.get("base_url")
         )
     return {"explanations": explanations}
 
@@ -139,16 +139,16 @@ def build_graph():
 def run_screen(
     smiles_list: list[str],
     brief: str = "",
-    model_id: Optional[str] = None,
-    region: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> ScreenState:
     """Run the full screening flow. Uses LangGraph when available, otherwise a
     direct sequential fallback over the same node functions."""
     initial: ScreenState = {
         "brief": brief,
         "smiles_list": smiles_list,
-        "model_id": model_id,
-        "region": region,
+        "model": model,
+        "base_url": base_url,
     }
     try:
         graph = build_graph()

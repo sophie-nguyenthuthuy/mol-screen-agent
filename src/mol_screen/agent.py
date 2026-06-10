@@ -30,8 +30,8 @@ class ScreeningReport:
 def screen(
     smiles_list: list[str],
     brief: str = "",
-    model_id: Optional[str] = None,
-    region: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> ScreeningReport:
     """Screen a list of SMILES against a natural-language brief.
 
@@ -44,7 +44,7 @@ def screen(
         for v in report.passed():
             print(v.smiles, report.explanations[v.smiles])
     """
-    state = run_screen(smiles_list, brief=brief, model_id=model_id, region=region)
+    state = run_screen(smiles_list, brief=brief, model=model, base_url=base_url)
     return ScreeningReport(
         verdicts=state.get("verdicts", []),
         explanations=state.get("explanations", {}),
@@ -54,11 +54,11 @@ def screen(
 
 
 class ScreeningAgent:
-    """Stateful wrapper that pins a model/region across multiple screens."""
+    """Stateful wrapper that pins a model/endpoint across multiple screens."""
 
-    def __init__(self, model_id: Optional[str] = None, region: Optional[str] = None):
-        self.model_id = model_id
-        self.region = region
+    def __init__(self, model: Optional[str] = None, base_url: Optional[str] = None):
+        self.model = model
+        self.base_url = base_url
 
     def screen(self, smiles_list: list[str], brief: str = "") -> ScreeningReport:
-        return screen(smiles_list, brief=brief, model_id=self.model_id, region=self.region)
+        return screen(smiles_list, brief=brief, model=self.model, base_url=self.base_url)

@@ -1,6 +1,6 @@
 """Tests for the offline intake fallback (keyword -> ScreeningPlan).
 
-No AWS/Bedrock required: these exercise the deterministic fallback used when
+No LLM server required: these exercise the deterministic fallback used when
 the LLM is unavailable, so they verify the agent degrades gracefully offline.
 """
 

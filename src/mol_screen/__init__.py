@@ -1,8 +1,8 @@
 """mol_screen — agentic molecule screening.
 
-RDKit computes the properties, deterministic rule sets decide pass/fail, and
-Bedrock-hosted Claude (via LangGraph) plans the screen from a natural-language
-brief and explains each verdict.
+RDKit computes the properties, deterministic rule sets decide pass/fail, and a
+self-hosted open-source LLM (via LangGraph, over any OpenAI-compatible endpoint)
+plans the screen from a natural-language brief and explains each verdict.
 """
 
 from .agent import ScreeningAgent, screen

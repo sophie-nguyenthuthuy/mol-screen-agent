@@ -1,4 +1,9 @@
-"""Bedrock-hosted Claude integration via LangChain.
+"""Open-source LLM integration via an OpenAI-compatible endpoint.
+
+Works with any self-hostable server that speaks the OpenAI API — Ollama, vLLM,
+llama.cpp's server, Text-Generation-Inference, LM Studio — so the model stays
+open-source and on your own infrastructure. Defaults target a local Ollama
+instance running an open-weights instruct model (Qwen2.5 / Llama 3.1 / ...).
 
 Two LLM touch-points, both optional:
 
@@ -8,9 +13,9 @@ Two LLM touch-points, both optional:
 2. **Explanation** — narrate a single molecule's deterministic verdict in two
    or three sentences a chemist can act on.
 
-If Bedrock credentials / langchain-aws are unavailable, both fall back to
-deterministic behavior so the agent still runs end-to-end offline. The numeric
-pass/fail decision is *never* delegated to the model — see ``rules.py``.
+If no LLM endpoint is reachable (or langchain-openai isn't installed), both fall
+back to deterministic behavior so the agent still runs end-to-end offline. The
+numeric pass/fail decision is *never* delegated to the model — see ``rules.py``.
 """
 
 from __future__ import annotations
@@ -21,15 +26,14 @@ from typing import Optional
 
 from .descriptors import PROPERTY_LABELS
 
-# Bedrock model id. Override with BEDROCK_MODEL_ID once you've enabled access to
-# a newer Claude in your account/region (e.g. a Sonnet 4.6 / Opus 4.8 inference
-# profile such as "us.anthropic.claude-sonnet-4-6-v1:0"). The default below is a
-# broadly-available cross-region inference profile so the agent runs out of the
-# box for anyone with standard Bedrock Claude access.
-DEFAULT_MODEL_ID = os.environ.get(
-    "BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-)
-DEFAULT_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
+# Open-source model served over an OpenAI-compatible API. Point these at your
+# own server: Ollama (default, http://localhost:11434/v1), vLLM, llama.cpp, TGI.
+# Pick any open-weights instruct model with tool-calling support (Qwen2.5,
+# Llama 3.1, Mistral, DeepSeek, ...).
+DEFAULT_MODEL = os.environ.get("MOL_SCREEN_LLM_MODEL", "qwen2.5:7b-instruct")
+DEFAULT_BASE_URL = os.environ.get("MOL_SCREEN_LLM_BASE_URL", "http://localhost:11434/v1")
+# Most local servers ignore the key, but the OpenAI client requires a non-empty one.
+DEFAULT_API_KEY = os.environ.get("MOL_SCREEN_LLM_API_KEY", "not-needed")
 
 
 @dataclass
@@ -42,21 +46,59 @@ class ScreeningPlan:
     rationale: str = "default drug-likeness screen"
 
 
-def _build_chat(model_id: Optional[str] = None, region: Optional[str] = None):
-    """Construct a ChatBedrockConverse client, or return None if unavailable."""
+# Per-process cache of endpoint reachability, keyed by base_url, so a down or
+# misconfigured server is probed once (seconds) instead of timing out on every
+# LLM call (minutes). Set MOL_SCREEN_LLM_PROBE=0 to disable the pre-flight check.
+_REACHABLE: dict[str, bool] = {}
+_PROBE_ENABLED = os.environ.get("MOL_SCREEN_LLM_PROBE", "1") != "0"
+_PROBE_TIMEOUT = float(os.environ.get("MOL_SCREEN_LLM_PROBE_TIMEOUT", "3"))
+
+
+def _endpoint_reachable(base_url: str) -> bool:
+    """Quick, cached pre-flight: is an OpenAI-compatible server answering at
+    ``base_url``? Hits GET /models with a short timeout so the deterministic
+    fallback kicks in fast when nothing (usable) is listening."""
+    if not _PROBE_ENABLED:
+        return True
+    if base_url in _REACHABLE:
+        return _REACHABLE[base_url]
+    import urllib.request
+
+    url = base_url.rstrip("/") + "/models"
     try:
-        from langchain_aws import ChatBedrockConverse
+        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {DEFAULT_API_KEY}"})
+        with urllib.request.urlopen(req, timeout=_PROBE_TIMEOUT) as resp:
+            ok = getattr(resp, "status", 200) < 500
+    except Exception:
+        ok = False
+    _REACHABLE[base_url] = ok
+    return ok
+
+
+def _build_chat(model: Optional[str] = None, base_url: Optional[str] = None):
+    """Construct a chat client for the OpenAI-compatible endpoint, or return None
+    if langchain-openai isn't installed or the endpoint isn't reachable.
+
+    ``max_retries=0`` means a bad call (e.g. model not pulled) fails fast to the
+    deterministic fallback rather than retrying for minutes."""
+    try:
+        from langchain_openai import ChatOpenAI
     except ImportError:
         return None
+    url = base_url or DEFAULT_BASE_URL
+    if not _endpoint_reachable(url):
+        return None
     try:
-        return ChatBedrockConverse(
-            model=model_id or DEFAULT_MODEL_ID,
-            region_name=region or DEFAULT_REGION,
+        return ChatOpenAI(
+            model=model or DEFAULT_MODEL,
+            base_url=url,
+            api_key=DEFAULT_API_KEY,
             temperature=0,
             max_tokens=1024,
+            timeout=45,
+            max_retries=0,
         )
     except Exception:
-        # Misconfigured credentials, missing region, etc. — fall back gracefully.
         return None
 
 
@@ -114,11 +156,11 @@ Rules:
 def plan_from_brief(
     brief: str,
     rule_set_catalog: dict,
-    model_id: Optional[str] = None,
-    region: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> ScreeningPlan:
-    """Produce a ScreeningPlan from a brief, via Bedrock if available else default."""
-    chat = _build_chat(model_id, region)
+    """Produce a ScreeningPlan from a brief, via the LLM if reachable else default."""
+    chat = _build_chat(model, base_url)
     if chat is None or not brief.strip():
         return _fallback_plan(brief, rule_set_catalog)
 
@@ -202,9 +244,9 @@ properties and thresholds that drove the outcome. Do not recompute or second-gue
 the numbers — they are authoritative. Be concise and concrete."""
 
 
-def explain_verdict(verdict, model_id: Optional[str] = None, region: Optional[str] = None) -> str:
-    """Return a short rationale for a Verdict, via Bedrock if available else template."""
-    chat = _build_chat(model_id, region)
+def explain_verdict(verdict, model: Optional[str] = None, base_url: Optional[str] = None) -> str:
+    """Return a short rationale for a Verdict, via the LLM if reachable else template."""
+    chat = _build_chat(model, base_url)
     if chat is None:
         return _fallback_explanation(verdict)
     try:

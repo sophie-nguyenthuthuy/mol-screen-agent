@@ -23,7 +23,7 @@ from .agent import screen
 from .descriptors import PROPERTY_LABELS, PROPERTY_ORDER, rdkit_available
 from .rules import BUILTIN_RULE_SETS
 
-app = typer.Typer(add_completion=False, help="Agentic molecule screening (RDKit + LangGraph + Bedrock).")
+app = typer.Typer(add_completion=False, help="Agentic molecule screening (RDKit + LangGraph + open-source LLM).")
 console = Console()
 
 
@@ -95,13 +95,13 @@ def _check_rdkit() -> None:
 def smiles(
     smiles: List[str] = typer.Argument(..., help="One or more SMILES strings."),
     brief: str = typer.Option("", "--brief", "-b", help="Natural-language screening brief."),
-    model_id: Optional[str] = typer.Option(None, "--model", help="Bedrock model id override."),
-    region: Optional[str] = typer.Option(None, "--region", help="AWS region override."),
+    model: Optional[str] = typer.Option(None, "--model", help="Open-weights model name override."),
+    base_url: Optional[str] = typer.Option(None, "--base-url", help="OpenAI-compatible endpoint URL."),
     show_properties: bool = typer.Option(False, "--properties", "-p", help="Show the full property table."),
 ):
     """Screen SMILES passed on the command line."""
     _check_rdkit()
-    report = screen(list(smiles), brief=brief, model_id=model_id, region=region)
+    report = screen(list(smiles), brief=brief, model=model, base_url=base_url)
     _render(report, show_properties)
 
 
@@ -109,8 +109,8 @@ def smiles(
 def file(
     path: str = typer.Argument(..., help="Path to a .smi/.txt file (one SMILES per line)."),
     brief: str = typer.Option("", "--brief", "-b", help="Natural-language screening brief."),
-    model_id: Optional[str] = typer.Option(None, "--model", help="Bedrock model id override."),
-    region: Optional[str] = typer.Option(None, "--region", help="AWS region override."),
+    model: Optional[str] = typer.Option(None, "--model", help="Open-weights model name override."),
+    base_url: Optional[str] = typer.Option(None, "--base-url", help="OpenAI-compatible endpoint URL."),
     show_properties: bool = typer.Option(False, "--properties", "-p", help="Show the full property table."),
 ):
     """Screen SMILES read from a file."""
@@ -119,7 +119,7 @@ def file(
     if not smiles_list:
         console.print(f"[yellow]No SMILES found in {path}.[/yellow]")
         raise typer.Exit(code=1)
-    report = screen(smiles_list, brief=brief, model_id=model_id, region=region)
+    report = screen(smiles_list, brief=brief, model=model, base_url=base_url)
     _render(report, show_properties)
 
 

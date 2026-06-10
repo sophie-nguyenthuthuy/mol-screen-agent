@@ -1,6 +1,6 @@
 """Unit tests for the deterministic rule evaluator.
 
-These run on stdlib alone — no RDKit, LangGraph, or AWS required — because the
+These run on stdlib alone — no RDKit, LangGraph, or LLM required — because the
 evaluator consumes a plain property dict. This is the core correctness contract:
 the LLM never touches pass/fail.
 """
